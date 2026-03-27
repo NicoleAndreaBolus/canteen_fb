@@ -4,13 +4,29 @@ import { ShieldCheck, Utensils } from 'lucide-react';
 export default function LandingPage({ navigate }) {
   return (
     <div className="landing-bg">
-      <div style={{ border: '1px solid rgba(255,255,255,0.2)', padding: '6px 16px', borderRadius: '20px', fontSize: '12px', color: '#c59b41', marginBottom: '30px', letterSpacing: '1px' }}>
+      {/* 1. The Small Top Badge */}
+      <div style={{ border: '1px solid rgba(255,255,255,0.2)', padding: '6px 16px', borderRadius: '20px', fontSize: '12px', color: 'var(--accent-gold)', marginBottom: '30px', letterSpacing: '1px' }}>
         • EdDSA • Ed25519 • Group 1 • Mid Lab 2
       </div>
       
+      {/* 2. THE NEW LOGO */}
+      <img 
+        src="/ua-logo.png" 
+        alt="University of the Assumption Logo" 
+        style={{ 
+          width: '110px', 
+          height: '110px', 
+          marginBottom: '20px', 
+          borderRadius: '50%', /* Makes it a perfect circle if the image is square */
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)' /* Soft dark glow */
+        }} 
+      />
+
+      {/* 3. The Main Title */}
       <h1 className="serif" style={{ fontSize: '3.5rem', textAlign: 'center', marginBottom: '15px', color: '#f7f4ec' }}>
-        CIT Canteen<br/>Evaluation System
+        University of the Assumption<br/>Canteen Evaluation
       </h1>
+      
       <p style={{ color: '#a0aab2', textAlign: 'center', maxWidth: '400px', marginBottom: '60px' }}>
         Every feedback submission is digitally signed with a real Ed25519 private key to ensure authenticity.
       </p>

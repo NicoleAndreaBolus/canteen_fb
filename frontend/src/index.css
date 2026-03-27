@@ -1,19 +1,23 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@600;700&display=swap');
 
 :root {
-  --bg-dark-green: #1b2e20;
-  --bg-cream: #f7f4ec;
-  --accent-gold: #b37e34;
-  --accent-gold-hover: #9c6c2b;
+  /* Swapped to UA Navy Blue & Gold */
+  --bg-dark-green: #0a1b3f; /* Deep Navy Blue */
+  --bg-darker-green: #050d21; /* Darker Navy for gradient */
+  --bg-cream: #fbfaf7; 
+  --accent-gold: #d4a017; /* UA Bright Gold */
+  --accent-gold-hover: #b58810;
+  
   --card-bg: #ffffff;
-  --text-dark: #2c2c2c;
-  --text-light: #e0e0e0;
-  --border-color: #e5e2d9;
-  --input-bg: #eceae1;
-  --success: #2b7a4b;
-  --danger: #b33939;
+  --text-dark: #232323;
+  --text-muted: #737373;
+  --border-color: #eeebe3;
+  --input-bg: #f5f3ec;
+  --success: #278048;
+  --success-bg: #edf6f0;
+  --danger: #c93b3b;
+  --danger-bg: #fcf0f0;
 }
-
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
