@@ -6,18 +6,20 @@ export async function submitFeedback(feedback) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(feedback)
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({})); 
+    throw new Error(errData.error || "Failed to submit feedback");
+  }
   return res.json();
 }
 
 export async function getAllFeedbacks() {
   const res = await fetch(`${API_URL}/feedbacks`);
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error("Failed to fetch data");
   return res.json();
 }
 
 export async function verifyFeedback(feedback) {
-  // send only needed fields
   const payload = {
     customer_name: feedback.customer_name,
     rating: feedback.rating,
@@ -30,6 +32,9 @@ export async function verifyFeedback(feedback) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || "Failed to verify signature");
+  }
   return res.json();
 }
