@@ -51,4 +51,19 @@ router.post('/verify', async (req, res) => {
     }
 });
 
+// DELETE a compromised feedback record (For Admin Purge)
+router.delete('/feedback/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Assuming you are using 'pool' for your PostgreSQL connection
+    await pool.query("DELETE FROM feedback WHERE id = $1", [id]);
+    
+    res.json({ message: "Record purged successfully" });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send("Server Error");
+  }
+});
+
 module.exports = router;

@@ -8,33 +8,33 @@ export default function LandingPage({ navigate }) {
       <div style={{ border: '1px solid rgba(255,255,255,0.2)', padding: '6px 16px', borderRadius: '20px', fontSize: '12px', color: 'var(--accent-gold)', marginBottom: '30px', letterSpacing: '1px' }}>
         • EdDSA • Ed25519 • Group 1 • Mid Lab 2
       </div>
-      
+
       {/* 2. THE NEW LOGO */}
-      <img 
-        src="/ua-logo.png" 
-        alt="University of the Assumption Logo" 
-        style={{ 
-          width: '110px', 
-          height: '110px', 
-          marginBottom: '20px', 
+      <img
+        src="/ua-logo.png"
+        alt="University of the Assumption Logo"
+        style={{
+          width: '110px',
+          height: '110px',
+          marginBottom: '20px',
           borderRadius: '50%', /* Makes it a perfect circle if the image is square */
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)' /* Soft dark glow */
-        }} 
+        }}
       />
 
       {/* 3. The Main Title */}
       <h1 className="serif" style={{ fontSize: '3.5rem', textAlign: 'center', marginBottom: '15px', color: '#f7f4ec' }}>
-        University of the Assumption<br/>Canteen Evaluation
+        University of the Assumption<br />Canteen Evaluation
       </h1>
-      
+
       <p style={{ color: '#a0aab2', textAlign: 'center', maxWidth: '400px', marginBottom: '60px' }}>
         Every feedback submission is digitally signed with a real Ed25519 private key to ensure authenticity.
       </p>
 
       <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', justifyContent: 'center' }}>
-        
+
         {/* Customer Portal Card */}
-        <div 
+        <div
           onClick={() => navigate('customer')}
           style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '40px', width: '300px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.3s' }}
           onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
@@ -48,7 +48,7 @@ export default function LandingPage({ navigate }) {
         </div>
 
         {/* Admin Portal Card */}
-        <div 
+        <div
           onClick={() => navigate('admin-login')}
           style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '40px', width: '300px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.3s' }}
           onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
@@ -62,6 +62,14 @@ export default function LandingPage({ navigate }) {
         </div>
 
       </div>
+
+       {/* 4. The Bottom Link */} 
+      <button
+        onClick={() => navigate('verify_receipt')}
+        style={{ background: 'transparent', border: 'none', color: 'var(--accent-gold)', textDecoration: 'underline', cursor: 'pointer' }}
+      >
+        Verify a PDF Receipt
+      </button>
     </div>
   );
 }

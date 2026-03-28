@@ -38,3 +38,13 @@ export async function verifyFeedback(feedback) {
   }
   return res.json();
 }
+
+export const deleteFeedback = async (id) => {
+  const response = await fetch(`http://localhost:5000/api/feedback/${id}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to delete record');
+  }
+  return response.json();
+};

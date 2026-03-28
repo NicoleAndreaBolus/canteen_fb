@@ -3,6 +3,7 @@ import LandingPage from "./components/LandingPage";
 import FeedbackForm from "./components/FeedbackForm";
 import AdminLogin from "./components/AdminLogin";
 import AdminDashboard from "./components/AdminDashboard";
+import VerifyReceipt from './components/VerifyReceipt';
 
 export default function App() {
   const [currentView, setCurrentView] = useState("landing");
@@ -15,6 +16,7 @@ export default function App() {
       {currentView === "customer" && <FeedbackForm navigate={navigate} />}
       {currentView === "admin-login" && <AdminLogin navigate={navigate} />}
       {currentView === "admin-dashboard" && <AdminDashboard navigate={navigate} />}
+      {currentView === "verify_receipt" && <VerifyReceipt navigate={navigate} />}
     </>
   );
 }

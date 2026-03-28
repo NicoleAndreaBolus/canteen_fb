@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from "react";
-import { getAllFeedbacks, verifyFeedback } from "../api";
+import React, { useEffect, useState, useRef } from "react";
+// NEW: Added deleteFeedback to the import
+import { getAllFeedbacks, verifyFeedback, deleteFeedback } from "../api";
 import {
   PieChart, Pie, Cell, Tooltip as PieTooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as BarTooltip
 } from 'recharts';
-import { LayoutDashboard, FileText, CheckCircle, LogOut, ShieldCheck, X, Star, Key, Hash, ShieldAlert, Search, Download, AlertTriangle, Clock, Terminal } from 'lucide-react';
+// NEW: Added Trash2, ChevronLeft, ChevronRight icons
+import { LayoutDashboard, FileText, CheckCircle, LogOut, ShieldCheck, X, Star, Key, Hash, ShieldAlert, Search, Download, AlertTriangle, Clock, Terminal, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function AdminDashboard({ navigate }) {
   const [feedbacks, setFeedbacks] = useState([]);
@@ -13,30 +15,74 @@ export default function AdminDashboard({ navigate }) {
   const [selectedFeedback, setSelectedFeedback] = useState(null);
   const [isAuditing, setIsAuditing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-
-  // NEW: State for the Cyber Terminal Modal
   const [traceModal, setTraceModal] = useState(null);
   const [traceStatus, setTraceStatus] = useState('loading');
 
+  // NEW: Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 6; // Shows 6 records per page
+
+  // We use a ref so our background polling knows if a manual audit is currently running
+  const isAuditingRef = useRef(isAuditing);
+  useEffect(() => { isAuditingRef.current = isAuditing; }, [isAuditing]);
+
+  // NEW: Reset to page 1 if the user types in the search bar
+  useEffect(() => { setCurrentPage(1); }, [searchTerm]);
+
+  // --- REAL-TIME ACTIVE INTRUSION DETECTION ---
   useEffect(() => {
-    getAllFeedbacks().then(data => {
-      setFeedbacks(data);
-      data.forEach(async (f) => {
-        try {
-          const { valid } = await verifyFeedback(f);
-          setVerifyState(prev => ({ ...prev, [f.id]: valid ? "valid" : "invalid" }));
-        } catch (e) {
-          setVerifyState(prev => ({ ...prev, [f.id]: "invalid" }));
-        }
-      });
-    }).catch(console.error);
+    const fetchAndAudit = async () => {
+      // Pause background polling if the admin is running a manual visual audit
+      if (isAuditingRef.current) return; 
+
+      try {
+        const data = await getAllFeedbacks();
+        setFeedbacks(data);
+
+        // Run background verification on all fetched records silently
+        const results = await Promise.all(data.map(async (f) => {
+          try {
+            const { valid } = await verifyFeedback(f);
+            return { id: f.id, status: valid ? "valid" : "invalid" };
+          } catch {
+            return { id: f.id, status: "invalid" };
+          }
+        }));
+
+        setVerifyState(prev => {
+          const nextState = { ...prev };
+          results.forEach(res => {
+            // Don't overwrite the state if the user clicked "Check Hash" manually
+            if (nextState[res.id] !== 'checking') {
+              nextState[res.id] = res.status;
+            }
+          });
+          return nextState;
+        });
+      } catch (error) {
+        console.error("Live sync error:", error);
+      }
+    };
+
+    fetchAndAudit(); // Run immediately on load
+    const intervalId = setInterval(fetchAndAudit, 3000); // Heartbeat every 3 seconds
+
+    return () => clearInterval(intervalId); // Cleanup on unmount
   }, []);
 
   const hasBreach = Object.values(verifyState).includes('invalid');
-  const filteredFeedbacks = feedbacks.filter(f =>
-    (f.customer_name || 'Anonymous').toLowerCase().includes(searchTerm.toLowerCase()) ||
+  
+  // 1. Filter data based on search
+  const filteredFeedbacks = feedbacks.filter(f => 
+    (f.customer_name || 'Anonymous').toLowerCase().includes(searchTerm.toLowerCase()) || 
     f.id.toString().includes(searchTerm)
   );
+
+  // 2. NEW: Slice data for Pagination
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentItems = filteredFeedbacks.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredFeedbacks.length / itemsPerPage);
 
   const total = feedbacks.length;
   const avg = total > 0 ? (feedbacks.reduce((sum, f) => sum + f.rating, 0) / total).toFixed(2) : "0.00";
@@ -89,13 +135,11 @@ export default function AdminDashboard({ navigate }) {
     setIsAuditing(false);
   };
 
-  // NEW: Triggers the dramatic Terminal Modal
   const runDetailedTrace = async (f) => {
     setTraceModal(f);
     setTraceStatus('loading');
     setVerifyState(prev => ({ ...prev, [f.id]: "checking" }));
-
-    // Simulate a complex calculation delay for presentation effect
+    
     setTimeout(async () => {
       try {
         const { valid } = await verifyFeedback(f);
@@ -106,6 +150,24 @@ export default function AdminDashboard({ navigate }) {
         setTraceStatus('fail');
       }
     }, 1500);
+  };
+
+  // NEW: Purge Record Function
+  const handlePurgeRecord = async (id) => {
+    if (window.confirm(`SECURITY ALERT: Are you sure you want to permanently purge Record #${id}? This action cannot be undone.`)) {
+      try {
+        await deleteFeedback(id);
+        // Remove from local state immediately for snappy UI
+        setFeedbacks(prev => prev.filter(f => f.id !== id));
+        setVerifyState(prev => {
+          const newState = { ...prev };
+          delete newState[id];
+          return newState;
+        });
+      } catch (err) {
+        alert("Failed to delete record. Make sure your backend delete route is running!");
+      }
+    }
   };
 
   const exportToCSV = () => {
@@ -138,9 +200,8 @@ export default function AdminDashboard({ navigate }) {
     return { metrics: null, text: text };
   };
 
-  // NEW: Precision Date Formatter
   const formatPrecisionDate = (dateString) => {
-    if (!dateString) return 'N/A';
+    if (!dateString) return { date: 'N/A', time: '' };
     const d = new Date(dateString);
     return {
       date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
@@ -157,35 +218,46 @@ export default function AdminDashboard({ navigate }) {
     );
   };
 
+  // NEW: Reusable Pagination Component
+  const PaginationControls = () => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', padding: '15px 0', borderTop: '1px solid #eee' }}>
+      <span style={{ fontSize: '14px', color: '#888' }}>
+        Showing <strong>{currentItems.length > 0 ? indexOfFirstItem + 1 : 0}</strong> to <strong>{Math.min(indexOfLastItem, filteredFeedbacks.length)}</strong> of <strong>{filteredFeedbacks.length}</strong> records
+      </span>
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <button className="btn-secondary" disabled={currentPage === 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} style={{ padding: '8px 14px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', opacity: currentPage === 1 ? 0.5 : 1 }}>
+          <ChevronLeft size={16} /> Prev
+        </button>
+        <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--bg-dark-green)', padding: '0 10px' }}>
+          Page {currentPage} of {totalPages || 1}
+        </span>
+        <button className="btn-secondary" disabled={currentPage === totalPages || totalPages === 0} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} style={{ padding: '8px 14px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', opacity: (currentPage === totalPages || totalPages === 0) ? 0.5 : 1 }}>
+          Next <ChevronRight size={16} />
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f9f7f1', position: 'relative' }}>
+      {/* Required for the Live Sync Pulse animation */}
+      <style>{`@keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }`}</style>
 
       {/* SIDEBAR */}
       <div style={{ width: '280px', background: 'linear-gradient(180deg, var(--bg-dark-green) 0%, #050d21 100%)', color: 'white', padding: '40px 25px', display: 'flex', flexDirection: 'column' }}>
-
-        {/* --- PERFECTLY ALIGNED BRANDING --- */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '45px' }}>
-          <img
-            src="/ua-logo.png" 
-            alt="University Logo"
-            style={{
-              width: '46px',
-              height: '46px',
-              borderRadius: '50%',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-              border: '2px solid rgba(255,255,255,0.1)' /* Optional: gives the logo a sleek edge */
-            }}
-          />
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '8px' }}>
+          <img src="/ua-logo.png" alt="University Logo" style={{ width: '46px', height: '46px', borderRadius: '50%', boxShadow: '0 4px 12px rgba(0,0,0,0.4)', border: '2px solid rgba(255,255,255,0.1)' }} />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <h2 className="serif" style={{ color: 'white', fontSize: '1.7rem', margin: 0, lineHeight: '1.1' }}>
-              UA <span style={{ color: 'var(--accent-gold)' }}>Canteen</span>
-            </h2>
-            <p style={{ fontSize: '11px', color: '#a0aab2', margin: 0, marginTop: '4px', letterSpacing: '0.3px' }}>
-              EdDSA Secured • Admin
-            </p>
+            <h2 className="serif" style={{ color: 'white', fontSize: '1.7rem', margin: 0, lineHeight: '1.1' }}>UA <span style={{ color: 'var(--accent-gold)' }}>Canteen</span></h2>
+            <p style={{ fontSize: '11px', color: '#a0aab2', margin: 0, marginTop: '4px', letterSpacing: '0.3px' }}>EdDSA Secured • Admin</p>
           </div>
         </div>
-        {/* --------------------------------- */}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#00ff00', marginBottom: '45px', paddingLeft: '60px', opacity: 0.8 }}>
+          <div style={{ width: '6px', height: '6px', backgroundColor: '#00ff00', borderRadius: '50%', animation: 'pulse 2s infinite' }}></div>
+          LIVE SYNC ACTIVE
+        </div>
 
         <MenuItem id="dashboard" icon={LayoutDashboard} label="Dashboard" />
         <MenuItem id="records" icon={FileText} label="All Records" />
@@ -225,10 +297,10 @@ export default function AdminDashboard({ navigate }) {
                 <div className="serif" style={{ fontSize: '2.8rem', color: 'var(--bg-dark-green)' }}>{total}</div>
                 <div style={{ fontSize: '14px', color: '#999' }}>All submissions</div>
               </div>
-              <div className="card" style={{ borderTop: `5px solid ${hasBreach ? 'var(--danger)' : 'var(--success)'}`, padding: '30px', backgroundColor: hasBreach ? 'var(--danger-bg)' : 'white' }}>
+              <div className="card" style={{ borderTop: `5px solid ${hasBreach ? 'var(--danger)' : 'var(--success)'}`, padding: '30px', backgroundColor: hasBreach ? 'var(--danger-bg)' : 'white', transition: 'all 0.3s' }}>
                 <div style={{ fontSize: '14px', color: hasBreach ? 'var(--danger)' : '#666', fontWeight: 600, textTransform: 'uppercase' }}>System Integrity</div>
                 <div className="serif" style={{ fontSize: '2.2rem', color: hasBreach ? 'var(--danger)' : 'var(--success)', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {hasBreach ? <><ShieldAlert size={28} /> COMPROMISED</> : <><ShieldCheck size={28} /> Active</>}
+                  {hasBreach ? <><ShieldAlert size={28}/> COMPROMISED</> : <><ShieldCheck size={28}/> Active</>}
                 </div>
                 <div style={{ fontSize: '14px', color: hasBreach ? 'var(--danger)' : '#999', fontWeight: hasBreach ? 600 : 400 }}>
                   {hasBreach ? "TAMPERING DETECTED" : "Ed25519 Secured"}
@@ -285,8 +357,8 @@ export default function AdminDashboard({ navigate }) {
 
         {/* ---------------- VIEW 2: CANTEEN MANAGER RECORDS ---------------- */}
         {activeMenu === "records" && (
-          <div className="card animate-in" style={{ minHeight: '80vh', padding: '40px' }}>
-
+          <div className="card animate-in" style={{ minHeight: '80vh', padding: '40px', display: 'flex', flexDirection: 'column' }}>
+            
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
               <div>
                 <h1 className="serif" style={{ fontSize: '2.2rem', marginBottom: '10px' }}>Customer Feedback</h1>
@@ -302,7 +374,7 @@ export default function AdminDashboard({ navigate }) {
               <thead>
                 <tr style={{ borderBottom: '2px solid #eee' }}>
                   <th style={{ padding: '16px 12px', fontSize: '14px', color: '#888', width: '8%' }}>ID</th>
-                  <th style={{ padding: '16px 12px', fontSize: '14px', color: '#888', width: '18%' }}><Clock size={14} style={{ position: 'relative', top: '2px', marginRight: '4px' }} /> TIMESTAMP</th>
+                  <th style={{ padding: '16px 12px', fontSize: '14px', color: '#888', width: '18%' }}><Clock size={14} style={{position:'relative', top:'2px', marginRight:'4px'}}/> TIMESTAMP</th>
                   <th style={{ padding: '16px 12px', fontSize: '14px', color: '#888', width: '18%' }}>CUSTOMER</th>
                   <th style={{ padding: '16px 12px', fontSize: '14px', color: '#888', width: '34%' }}>FEEDBACK SUMMARY</th>
                   <th style={{ padding: '16px 12px', fontSize: '14px', color: '#888', width: '10%' }}>RATING</th>
@@ -310,17 +382,18 @@ export default function AdminDashboard({ navigate }) {
                 </tr>
               </thead>
               <tbody>
-                {filteredFeedbacks.length === 0 ? (
-                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>No records found matching "{searchTerm}"</td></tr>
-                ) : filteredFeedbacks.map((f, index) => {
+                {/* NEW: Replaced filteredFeedbacks with currentItems for Pagination */}
+                {currentItems.length === 0 ? (
+                  <tr><td colSpan="6" style={{textAlign: 'center', padding: '40px', color: '#999'}}>No records found.</td></tr>
+                ) : currentItems.map((f, index) => {
                   const parsed = parseFeedbackData(f.comment);
                   const precisionDate = formatPrecisionDate(f.created_at);
                   return (
                     <tr key={f.id} className="animate-in" style={{ borderBottom: '1px solid #eee', animationDelay: `${index * 0.05}s` }}>
                       <td style={{ padding: '24px 12px', color: '#999', fontSize: '14px' }}>#{f.id}</td>
                       <td style={{ padding: '24px 12px', color: '#666', fontSize: '13px' }}>
-                        <div style={{ fontWeight: 500 }}>{precisionDate.date}</div>
-                        <div style={{ color: '#aaa', fontSize: '12px' }}>{precisionDate.time}</div>
+                        <div style={{fontWeight: 500}}>{precisionDate.date}</div>
+                        <div style={{color: '#aaa', fontSize: '12px'}}>{precisionDate.time}</div>
                       </td>
                       <td style={{ padding: '24px 12px', fontWeight: 500, fontSize: '15px' }}>{f.customer_name || 'Anonymous'}</td>
                       <td style={{ padding: '24px 12px', fontSize: '15px', color: '#444' }}>
@@ -335,12 +408,17 @@ export default function AdminDashboard({ navigate }) {
                 })}
               </tbody>
             </table>
+            
+            {/* NEW: Pagination Controls at the bottom of the table */}
+            <div style={{ marginTop: 'auto' }}>
+              <PaginationControls />
+            </div>
           </div>
         )}
 
         {/* ---------------- VIEW 3: SECURITY AUDITOR LOGS ---------------- */}
         {activeMenu === "verify" && (
-          <div className="card animate-in" style={{ minHeight: '80vh', padding: '40px' }}>
+          <div className="card animate-in" style={{ minHeight: '80vh', padding: '40px', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
               <div>
                 <h1 className="serif" style={{ fontSize: '2.2rem', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -379,16 +457,17 @@ export default function AdminDashboard({ navigate }) {
                 </tr>
               </thead>
               <tbody>
-                {filteredFeedbacks.length === 0 ? (
-                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>No logs found.</td></tr>
-                ) : filteredFeedbacks.map((f, index) => {
+                {/* NEW: Replaced filteredFeedbacks with currentItems for Pagination */}
+                {currentItems.length === 0 ? (
+                  <tr><td colSpan="6" style={{textAlign: 'center', padding: '40px', color: '#999'}}>No logs found.</td></tr>
+                ) : currentItems.map((f, index) => {
                   const precisionDate = formatPrecisionDate(f.created_at);
                   return (
-                    <tr key={f.id} className="animate-in" style={{ borderBottom: '1px solid #eee', animationDelay: `${index * 0.05}s`, backgroundColor: verifyState[f.id] === 'invalid' ? 'var(--danger-bg)' : 'transparent' }}>
+                    <tr key={f.id} className="animate-in" style={{ borderBottom: '1px solid #eee', animationDelay: `${index * 0.05}s`, backgroundColor: verifyState[f.id] === 'invalid' ? 'var(--danger-bg)' : 'transparent', transition: 'background-color 0.3s' }}>
                       <td style={{ padding: '24px 12px', color: '#999', fontSize: '15px' }}>#{f.id}</td>
                       <td style={{ padding: '24px 12px', color: '#666', fontSize: '13px' }}>
-                        <div style={{ fontWeight: 500 }}>{precisionDate.date}</div>
-                        <div style={{ color: '#aaa', fontSize: '12px' }}>{precisionDate.time}</div>
+                        <div style={{fontWeight: 500}}>{precisionDate.date}</div>
+                        <div style={{color: '#aaa', fontSize: '12px'}}>{precisionDate.time}</div>
                       </td>
 
                       <td style={{ padding: '24px 12px', fontFamily: 'monospace', fontSize: '14px', color: '#444' }} title={f.signature}>
@@ -402,20 +481,33 @@ export default function AdminDashboard({ navigate }) {
                         {!verifyState[f.id] && <span style={{ fontSize: '14px', color: '#999' }}>Pending check</span>}
                         {verifyState[f.id] === 'checking' && <span className="badge badge-checking" style={{ fontSize: '13px', padding: '8px 14px' }}>Verifying...</span>}
                         {verifyState[f.id] === 'valid' && <span className="badge badge-valid" style={{ fontSize: '13px', padding: '8px 14px' }}>✓ Valid Signature</span>}
-                        {verifyState[f.id] === 'invalid' && <span className="badge badge-invalid" style={{ fontSize: '13px', padding: '8px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}><AlertTriangle size={14} /> TAMPERED</span>}
+                        {verifyState[f.id] === 'invalid' && <span className="badge badge-invalid" style={{ fontSize: '13px', padding: '8px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}><AlertTriangle size={14}/> TAMPERED</span>}
                       </td>
 
                       <td style={{ padding: '24px 12px', textAlign: 'right' }}>
-                        {/* THE NEW TRIGGER FOR THE HACKER TERMINAL */}
-                        <button className="btn-secondary" onClick={() => runDetailedTrace(f)} style={{ fontSize: '13px', padding: '8px 14px', backgroundColor: 'var(--bg-dark-green)', color: 'white', border: 'none' }}>
-                          <Terminal size={14} style={{ display: 'inline', position: 'relative', top: '2px', marginRight: '4px' }} /> Audit
-                        </button>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                          <button className="btn-secondary" onClick={() => runDetailedTrace(f)} style={{ fontSize: '13px', padding: '8px 14px', backgroundColor: 'var(--bg-dark-green)', color: 'white', border: 'none' }} title="Run Terminal Audit">
+                            <Terminal size={14} style={{display: 'inline', position: 'relative', top: '2px', marginRight: '4px'}}/> Audit
+                          </button>
+                          
+                          {/* NEW: THE PURGE BUTTON (Only shows if record is Tampered) */}
+                          {verifyState[f.id] === 'invalid' && (
+                            <button onClick={() => handlePurgeRecord(f.id)} className="animate-in" style={{ backgroundColor: 'var(--danger)', color: 'white', border: 'none', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }} title="Purge Compromised Record">
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
+
+            {/* NEW: Pagination Controls at the bottom of the table */}
+            <div style={{ marginTop: 'auto' }}>
+              <PaginationControls />
+            </div>
           </div>
         )}
       </div>
@@ -458,12 +550,11 @@ export default function AdminDashboard({ navigate }) {
         </div>
       )}
 
-      {/* ---------------- 2. NEW: CYBER TERMINAL MODAL (For Auditor) ---------------- */}
+      {/* ---------------- 2. CYBER TERMINAL MODAL (For Auditor) ---------------- */}
       {traceModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(5, 13, 33, 0.85)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
           <div className="animate-in" style={{ width: '90%', maxWidth: '700px', backgroundColor: '#0a0a0a', border: '1px solid #333', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.5)', fontFamily: 'monospace' }}>
-
-            {/* Terminal Header */}
+            
             <div style={{ backgroundColor: '#1a1a1a', padding: '12px 20px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ color: '#888', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Terminal size={16} /> Ed25519 VERIFICATION TRACE // TASK_ID: {traceModal.id}
@@ -471,27 +562,25 @@ export default function AdminDashboard({ navigate }) {
               <button onClick={() => setTraceModal(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#666' }}><X size={20} /></button>
             </div>
 
-            {/* Terminal Body */}
             <div style={{ padding: '30px', color: '#00ff00', fontSize: '14px', lineHeight: '1.6' }}>
-
+              
               <div style={{ color: '#aaa', marginBottom: '20px' }}>&gt; Initializing audit protocol...</div>
 
               <div style={{ marginBottom: '15px' }}>
-                <span style={{ color: '#fff' }}>[1] Target Payload Extracted:</span><br />
-                <span style={{ color: '#888' }}>&#123; customer_name: "{traceModal.customer_name}", rating: {traceModal.rating}, comment: "{traceModal.comment.substring(0, 30)}..." &#125;</span>
+                <span style={{color: '#fff'}}>[1] Target Payload Extracted:</span><br/>
+                <span style={{color: '#888'}}>&#123; customer_name: "{traceModal.customer_name}", rating: {traceModal.rating}, comment: "{traceModal.comment.substring(0, 30)}..." &#125;</span>
               </div>
 
               <div style={{ marginBottom: '15px' }}>
-                <span style={{ color: '#fff' }}>[2] Retrieving EdDSA Public Key:</span><br />
-                <span style={{ color: '#888' }}>{traceModal.public_key}</span>
+                <span style={{color: '#fff'}}>[2] Retrieving EdDSA Public Key:</span><br/>
+                <span style={{color: '#888'}}>{traceModal.public_key}</span>
               </div>
 
               <div style={{ marginBottom: '25px' }}>
-                <span style={{ color: '#fff' }}>[3] Comparing computed hash against provided signature...</span><br />
-                <span style={{ color: '#888' }}>Expected: {traceModal.signature ? `${traceModal.signature.substring(0, 64)}...` : 'NULL'}</span>
+                <span style={{color: '#fff'}}>[3] Comparing computed hash against provided signature...</span><br/>
+                <span style={{color: '#888'}}>Expected: {traceModal.signature ? `${traceModal.signature.substring(0, 64)}...` : 'NULL'}</span>
               </div>
 
-              {/* The dramatic reveal */}
               {traceStatus === 'loading' && (
                 <div style={{ color: '#00ff00', animation: 'pulse 1s infinite' }}>&gt; Validating elliptic curve constraints...</div>
               )}
@@ -505,7 +594,7 @@ export default function AdminDashboard({ navigate }) {
 
               {traceStatus === 'fail' && (
                 <div className="animate-in" style={{ backgroundColor: 'rgba(255, 0, 0, 0.1)', borderLeft: '4px solid #ff0000', padding: '15px', marginTop: '20px', color: '#ff0000' }}>
-                  <div style={{ fontWeight: 'bold', fontSize: '18px', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '10px' }}><AlertTriangle size={20} /> [FATAL ERROR] HASH MISMATCH</div>
+                  <div style={{ fontWeight: 'bold', fontSize: '18px', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '10px' }}><AlertTriangle size={20}/> [FATAL ERROR] HASH MISMATCH</div>
                   Computed payload hash does not match the Ed25519 signature. Data has been altered post-submission.
                 </div>
               )}
