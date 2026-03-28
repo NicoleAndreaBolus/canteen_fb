@@ -1,12 +1,10 @@
 import React, { useEffect, useState, useRef } from "react";
-// NEW: Added deleteFeedback to the import
 import { getAllFeedbacks, verifyFeedback, deleteFeedback } from "../api";
 import {
   PieChart, Pie, Cell, Tooltip as PieTooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as BarTooltip
 } from 'recharts';
-// NEW: Added Trash2, ChevronLeft, ChevronRight icons
-import { LayoutDashboard, FileText, CheckCircle, LogOut, ShieldCheck, X, Star, Key, Hash, ShieldAlert, Search, Download, AlertTriangle, Clock, Terminal, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, FileText, LogOut, ShieldCheck, X, Star, Key, Hash, ShieldAlert, Search, Download, AlertTriangle, Clock, Terminal, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function AdminDashboard({ navigate }) {
   const [feedbacks, setFeedbacks] = useState([]);
@@ -15,31 +13,25 @@ export default function AdminDashboard({ navigate }) {
   const [selectedFeedback, setSelectedFeedback] = useState(null);
   const [isAuditing, setIsAuditing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+
   const [traceModal, setTraceModal] = useState(null);
   const [traceStatus, setTraceStatus] = useState('loading');
 
-  // NEW: Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 6; // Shows 6 records per page
+  const itemsPerPage = 6; 
 
-  // We use a ref so our background polling knows if a manual audit is currently running
   const isAuditingRef = useRef(isAuditing);
   useEffect(() => { isAuditingRef.current = isAuditing; }, [isAuditing]);
-
-  // NEW: Reset to page 1 if the user types in the search bar
+  
   useEffect(() => { setCurrentPage(1); }, [searchTerm]);
 
-  // --- REAL-TIME ACTIVE INTRUSION DETECTION ---
+  // --- OUR FEATURE: REAL-TIME ACTIVE INTRUSION DETECTION (LIVE SYNC) ---
   useEffect(() => {
     const fetchAndAudit = async () => {
-      // Pause background polling if the admin is running a manual visual audit
-      if (isAuditingRef.current) return; 
-
+      if (isAuditingRef.current) return;
       try {
         const data = await getAllFeedbacks();
         setFeedbacks(data);
-
-        // Run background verification on all fetched records silently
         const results = await Promise.all(data.map(async (f) => {
           try {
             const { valid } = await verifyFeedback(f);
@@ -52,7 +44,6 @@ export default function AdminDashboard({ navigate }) {
         setVerifyState(prev => {
           const nextState = { ...prev };
           results.forEach(res => {
-            // Don't overwrite the state if the user clicked "Check Hash" manually
             if (nextState[res.id] !== 'checking') {
               nextState[res.id] = res.status;
             }
@@ -64,33 +55,37 @@ export default function AdminDashboard({ navigate }) {
       }
     };
 
-    fetchAndAudit(); // Run immediately on load
-    const intervalId = setInterval(fetchAndAudit, 3000); // Heartbeat every 3 seconds
-
-    return () => clearInterval(intervalId); // Cleanup on unmount
+    fetchAndAudit(); 
+    // This polls the database every 3 seconds!
+    const intervalId = setInterval(fetchAndAudit, 3000); 
+    return () => clearInterval(intervalId); 
   }, []);
 
   const hasBreach = Object.values(verifyState).includes('invalid');
-  
-  // 1. Filter data based on search
-  const filteredFeedbacks = feedbacks.filter(f => 
-    (f.customer_name || 'Anonymous').toLowerCase().includes(searchTerm.toLowerCase()) || 
+  const filteredFeedbacks = feedbacks.filter(f =>
+    (f.customer_name || 'Anonymous').toLowerCase().includes(searchTerm.toLowerCase()) ||
     f.id.toString().includes(searchTerm)
   );
 
-  // 2. NEW: Slice data for Pagination
+  // Pagination Math
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = filteredFeedbacks.slice(indexOfFirstItem, indexOfLastItem);
   const totalPages = Math.ceil(filteredFeedbacks.length / itemsPerPage);
 
   const total = feedbacks.length;
-  const avg = total > 0 ? (feedbacks.reduce((sum, f) => sum + f.rating, 0) / total).toFixed(2) : "0.00";
+  const avgValue = total > 0 ? Number((feedbacks.reduce((sum, f) => sum + f.rating, 0) / total).toFixed(2)) : 0;
+  const avgPercent = Math.round((avgValue / 5) * 100);
+  const avgLabel = avgValue >= 4.5 ? "Excellent" : avgValue >= 3.5 ? "Good" : avgValue >= 2.5 ? "Fair" : "Needs Improvement";
 
   const pieData = [5, 4, 3, 2, 1].map(star => ({
+    star,
     name: `${star} Stars`,
-    value: feedbacks.filter(f => f.rating === star).length
+    value: feedbacks.filter(f => f.rating === star).length,
+    percentage: total > 0 ? Number(((feedbacks.filter(f => f.rating === star).length / total) * 100).toFixed(1)) : 0
   })).filter(d => d.value > 0);
+
+  const dominantRating = pieData.length > 0 ? pieData.reduce((best, current) => current.value > best.value ? current : best, pieData[0]) : { star: 'N/A' };
 
   const COLORS = ['#0a1b3f', '#4169e1', '#d4a017', '#e6c25a', '#c93b3b'];
 
@@ -139,7 +134,7 @@ export default function AdminDashboard({ navigate }) {
     setTraceModal(f);
     setTraceStatus('loading');
     setVerifyState(prev => ({ ...prev, [f.id]: "checking" }));
-    
+
     setTimeout(async () => {
       try {
         const { valid } = await verifyFeedback(f);
@@ -152,12 +147,11 @@ export default function AdminDashboard({ navigate }) {
     }, 1500);
   };
 
-  // NEW: Purge Record Function
+  // --- OUR FEATURE: PURGE RECORD FUNCTION ---
   const handlePurgeRecord = async (id) => {
     if (window.confirm(`SECURITY ALERT: Are you sure you want to permanently purge Record #${id}? This action cannot be undone.`)) {
       try {
         await deleteFeedback(id);
-        // Remove from local state immediately for snappy UI
         setFeedbacks(prev => prev.filter(f => f.id !== id));
         setVerifyState(prev => {
           const newState = { ...prev };
@@ -165,7 +159,7 @@ export default function AdminDashboard({ navigate }) {
           return newState;
         });
       } catch (err) {
-        alert("Failed to delete record. Make sure your backend delete route is running!");
+        alert("Failed to delete record. Check backend server.");
       }
     }
   };
@@ -218,7 +212,6 @@ export default function AdminDashboard({ navigate }) {
     );
   };
 
-  // NEW: Reusable Pagination Component
   const PaginationControls = () => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', padding: '15px 0', borderTop: '1px solid #eee' }}>
       <span style={{ fontSize: '14px', color: '#888' }}>
@@ -240,17 +233,35 @@ export default function AdminDashboard({ navigate }) {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f9f7f1', position: 'relative' }}>
-      {/* Required for the Live Sync Pulse animation */}
-      <style>{`@keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }`}</style>
+      
+      {/* 🟢 I UPDATED THE STYLES HERE! Pulse is for the dot, blink is for the terminal! */}
+      <style>{`
+        @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+      `}</style>
 
       {/* SIDEBAR */}
       <div style={{ width: '280px', background: 'linear-gradient(180deg, var(--bg-dark-green) 0%, #050d21 100%)', color: 'white', padding: '40px 25px', display: 'flex', flexDirection: 'column' }}>
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '8px' }}>
-          <img src="/ua-logo.png" alt="University Logo" style={{ width: '46px', height: '46px', borderRadius: '50%', boxShadow: '0 4px 12px rgba(0,0,0,0.4)', border: '2px solid rgba(255,255,255,0.1)' }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '45px' }}>
+          <img
+            src="/ua-logo.png" 
+            alt="University Logo"
+            style={{
+              width: '46px',
+              height: '46px',
+              borderRadius: '50%',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+              border: '2px solid rgba(255,255,255,0.1)'
+            }}
+          />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <h2 className="serif" style={{ color: 'white', fontSize: '1.7rem', margin: 0, lineHeight: '1.1' }}>UA <span style={{ color: 'var(--accent-gold)' }}>Canteen</span></h2>
-            <p style={{ fontSize: '11px', color: '#a0aab2', margin: 0, marginTop: '4px', letterSpacing: '0.3px' }}>EdDSA Secured • Admin</p>
+            <h2 className="serif" style={{ color: 'white', fontSize: '1.7rem', margin: 0, lineHeight: '1.1' }}>
+              UA <span style={{ color: 'var(--accent-gold)' }}>Canteen</span>
+            </h2>
+            <p style={{ fontSize: '11px', color: '#a0aab2', margin: 0, marginTop: '4px', letterSpacing: '0.3px' }}>
+              EdDSA Secured • Admin
+            </p>
           </div>
         </div>
 
@@ -297,19 +308,25 @@ export default function AdminDashboard({ navigate }) {
                 <div className="serif" style={{ fontSize: '2.8rem', color: 'var(--bg-dark-green)' }}>{total}</div>
                 <div style={{ fontSize: '14px', color: '#999' }}>All submissions</div>
               </div>
-              <div className="card" style={{ borderTop: `5px solid ${hasBreach ? 'var(--danger)' : 'var(--success)'}`, padding: '30px', backgroundColor: hasBreach ? 'var(--danger-bg)' : 'white', transition: 'all 0.3s' }}>
+              <div className="card" style={{ borderTop: `5px solid ${hasBreach ? 'var(--danger)' : 'var(--success)'}`, padding: '30px', backgroundColor: hasBreach ? 'var(--danger-bg)' : 'white' }}>
                 <div style={{ fontSize: '14px', color: hasBreach ? 'var(--danger)' : '#666', fontWeight: 600, textTransform: 'uppercase' }}>System Integrity</div>
                 <div className="serif" style={{ fontSize: '2.2rem', color: hasBreach ? 'var(--danger)' : 'var(--success)', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {hasBreach ? <><ShieldAlert size={28}/> COMPROMISED</> : <><ShieldCheck size={28}/> Active</>}
+                  {hasBreach ? <><ShieldAlert size={28} /> COMPROMISED</> : <><ShieldCheck size={28} /> Active</>}
                 </div>
                 <div style={{ fontSize: '14px', color: hasBreach ? 'var(--danger)' : '#999', fontWeight: hasBreach ? 600 : 400 }}>
                   {hasBreach ? "TAMPERING DETECTED" : "Ed25519 Secured"}
                 </div>
               </div>
               <div className="card" style={{ borderTop: '5px solid var(--accent-gold)', padding: '30px' }}>
-                <div style={{ fontSize: '14px', color: '#666', fontWeight: 600, textTransform: 'uppercase' }}>Overall Avg</div>
-                <div className="serif" style={{ fontSize: '2.8rem', color: 'var(--bg-dark-green)' }}>{avg} <span style={{ fontSize: '1.2rem', color: '#999' }}>/ 5</span></div>
-                <div style={{ fontSize: '14px', color: '#999' }}>Out of 5.0</div>
+                <div style={{ fontSize: '14px', color: '#666', fontWeight: 600, textTransform: 'uppercase' }}>Average Rating</div>
+                <div className="serif" style={{ fontSize: '2.8rem', color: 'var(--bg-dark-green)' }}>{avgValue.toFixed(2)} <span style={{ fontSize: '1.2rem', color: '#999' }}>/ 5</span></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', color: '#666', fontSize: '14px' }}>
+                  <Star size={15} color="var(--accent-gold)" fill="var(--accent-gold)" /> {avgLabel}
+                </div>
+                <div style={{ height: '8px', backgroundColor: '#ece8dc', borderRadius: '999px', overflow: 'hidden', marginBottom: '8px' }}>
+                  <div style={{ width: `${avgPercent}%`, height: '100%', backgroundColor: 'var(--accent-gold)' }} />
+                </div>
+                <div style={{ fontSize: '13px', color: '#999' }}>{avgPercent}% of maximum score</div>
               </div>
               <div className="card" style={{ borderTop: '5px solid #c93b3b', padding: '30px' }}>
                 <div style={{ fontSize: '14px', color: '#666', fontWeight: 600, textTransform: 'uppercase' }}>Top Category</div>
@@ -340,16 +357,47 @@ export default function AdminDashboard({ navigate }) {
 
               <div className="card" style={{ padding: '35px' }}>
                 <h3 style={{ fontSize: '16px', textTransform: 'uppercase', color: '#666', marginBottom: '30px', letterSpacing: '0.5px' }}>Score Distribution</h3>
-                <div style={{ height: '350px', width: '100%' }}>
-                  <ResponsiveContainer>
-                    <PieChart>
-                      <Pie data={pieData} innerRadius={100} outerRadius={150} paddingAngle={4} dataKey="value" stroke="none">
-                        {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                      </Pie>
-                      <PieTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '14px' }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
+                {total === 0 ? (
+                  <div style={{ height: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: '16px' }}>No records yet to calculate distribution.</div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: '58% 42%', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ height: '320px', width: '100%', position: 'relative' }}>
+                      <ResponsiveContainer>
+                        <PieChart>
+                          <Pie data={pieData} innerRadius={80} outerRadius={120} paddingAngle={3} dataKey="value" stroke="none">
+                            {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                          </Pie>
+                          <PieTooltip
+                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '14px' }}
+                            formatter={(value, name, payload) => [`${value} (${payload.payload.percentage}%)`, name]}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                        <div style={{ fontSize: '13px', color: '#777', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Responses</div>
+                        <div className="serif" style={{ fontSize: '2rem', color: 'var(--bg-dark-green)', lineHeight: 1.1 }}>{total}</div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ fontSize: '13px', color: '#666', fontWeight: 600, marginBottom: '12px', textTransform: 'uppercase' }}>Breakdown</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {pieData.map((entry, index) => (
+                          <div key={entry.star} style={{ display: 'grid', gridTemplateColumns: '12px 1fr auto auto', alignItems: 'center', gap: '10px', fontSize: '14px', color: '#444' }}>
+                            <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: COLORS[index % COLORS.length], display: 'inline-block' }} />
+                            <span>{entry.star} Star</span>
+                            <span style={{ fontWeight: 600 }}>{entry.value}</span>
+                            <span style={{ color: '#888' }}>{entry.percentage}%</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div style={{ marginTop: '18px', padding: '10px 12px', borderRadius: '8px', backgroundColor: 'var(--input-bg)', fontSize: '13px', color: '#555' }}>
+                        Most common rating: <strong>{dominantRating.star} Star</strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -358,7 +406,7 @@ export default function AdminDashboard({ navigate }) {
         {/* ---------------- VIEW 2: CANTEEN MANAGER RECORDS ---------------- */}
         {activeMenu === "records" && (
           <div className="card animate-in" style={{ minHeight: '80vh', padding: '40px', display: 'flex', flexDirection: 'column' }}>
-            
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
               <div>
                 <h1 className="serif" style={{ fontSize: '2.2rem', marginBottom: '10px' }}>Customer Feedback</h1>
@@ -374,7 +422,7 @@ export default function AdminDashboard({ navigate }) {
               <thead>
                 <tr style={{ borderBottom: '2px solid #eee' }}>
                   <th style={{ padding: '16px 12px', fontSize: '14px', color: '#888', width: '8%' }}>ID</th>
-                  <th style={{ padding: '16px 12px', fontSize: '14px', color: '#888', width: '18%' }}><Clock size={14} style={{position:'relative', top:'2px', marginRight:'4px'}}/> TIMESTAMP</th>
+                  <th style={{ padding: '16px 12px', fontSize: '14px', color: '#888', width: '18%' }}><Clock size={14} style={{ position: 'relative', top: '2px', marginRight: '4px' }} /> TIMESTAMP</th>
                   <th style={{ padding: '16px 12px', fontSize: '14px', color: '#888', width: '18%' }}>CUSTOMER</th>
                   <th style={{ padding: '16px 12px', fontSize: '14px', color: '#888', width: '34%' }}>FEEDBACK SUMMARY</th>
                   <th style={{ padding: '16px 12px', fontSize: '14px', color: '#888', width: '10%' }}>RATING</th>
@@ -382,9 +430,8 @@ export default function AdminDashboard({ navigate }) {
                 </tr>
               </thead>
               <tbody>
-                {/* NEW: Replaced filteredFeedbacks with currentItems for Pagination */}
                 {currentItems.length === 0 ? (
-                  <tr><td colSpan="6" style={{textAlign: 'center', padding: '40px', color: '#999'}}>No records found.</td></tr>
+                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>No records found matching "{searchTerm}"</td></tr>
                 ) : currentItems.map((f, index) => {
                   const parsed = parseFeedbackData(f.comment);
                   const precisionDate = formatPrecisionDate(f.created_at);
@@ -392,8 +439,8 @@ export default function AdminDashboard({ navigate }) {
                     <tr key={f.id} className="animate-in" style={{ borderBottom: '1px solid #eee', animationDelay: `${index * 0.05}s` }}>
                       <td style={{ padding: '24px 12px', color: '#999', fontSize: '14px' }}>#{f.id}</td>
                       <td style={{ padding: '24px 12px', color: '#666', fontSize: '13px' }}>
-                        <div style={{fontWeight: 500}}>{precisionDate.date}</div>
-                        <div style={{color: '#aaa', fontSize: '12px'}}>{precisionDate.time}</div>
+                        <div style={{ fontWeight: 500 }}>{precisionDate.date}</div>
+                        <div style={{ color: '#aaa', fontSize: '12px' }}>{precisionDate.time}</div>
                       </td>
                       <td style={{ padding: '24px 12px', fontWeight: 500, fontSize: '15px' }}>{f.customer_name || 'Anonymous'}</td>
                       <td style={{ padding: '24px 12px', fontSize: '15px', color: '#444' }}>
@@ -408,8 +455,6 @@ export default function AdminDashboard({ navigate }) {
                 })}
               </tbody>
             </table>
-            
-            {/* NEW: Pagination Controls at the bottom of the table */}
             <div style={{ marginTop: 'auto' }}>
               <PaginationControls />
             </div>
@@ -457,40 +502,35 @@ export default function AdminDashboard({ navigate }) {
                 </tr>
               </thead>
               <tbody>
-                {/* NEW: Replaced filteredFeedbacks with currentItems for Pagination */}
                 {currentItems.length === 0 ? (
-                  <tr><td colSpan="6" style={{textAlign: 'center', padding: '40px', color: '#999'}}>No logs found.</td></tr>
+                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>No logs found.</td></tr>
                 ) : currentItems.map((f, index) => {
                   const precisionDate = formatPrecisionDate(f.created_at);
                   return (
-                    <tr key={f.id} className="animate-in" style={{ borderBottom: '1px solid #eee', animationDelay: `${index * 0.05}s`, backgroundColor: verifyState[f.id] === 'invalid' ? 'var(--danger-bg)' : 'transparent', transition: 'background-color 0.3s' }}>
+                    <tr key={f.id} className="animate-in" style={{ borderBottom: '1px solid #eee', animationDelay: `${index * 0.05}s`, backgroundColor: verifyState[f.id] === 'invalid' ? 'var(--danger-bg)' : 'transparent' }}>
                       <td style={{ padding: '24px 12px', color: '#999', fontSize: '15px' }}>#{f.id}</td>
                       <td style={{ padding: '24px 12px', color: '#666', fontSize: '13px' }}>
-                        <div style={{fontWeight: 500}}>{precisionDate.date}</div>
-                        <div style={{color: '#aaa', fontSize: '12px'}}>{precisionDate.time}</div>
+                        <div style={{ fontWeight: 500 }}>{precisionDate.date}</div>
+                        <div style={{ color: '#aaa', fontSize: '12px' }}>{precisionDate.time}</div>
                       </td>
-
                       <td style={{ padding: '24px 12px', fontFamily: 'monospace', fontSize: '14px', color: '#444' }} title={f.signature}>
                         {f.signature ? `${f.signature.substring(0, 20)}...` : 'N/A'}
                       </td>
                       <td style={{ padding: '24px 12px', fontFamily: 'monospace', fontSize: '14px', color: '#444' }} title={f.public_key}>
                         {f.public_key ? `${f.public_key.substring(0, 16)}...` : 'N/A'}
                       </td>
-
                       <td style={{ padding: '24px 12px', textAlign: 'center' }}>
                         {!verifyState[f.id] && <span style={{ fontSize: '14px', color: '#999' }}>Pending check</span>}
                         {verifyState[f.id] === 'checking' && <span className="badge badge-checking" style={{ fontSize: '13px', padding: '8px 14px' }}>Verifying...</span>}
                         {verifyState[f.id] === 'valid' && <span className="badge badge-valid" style={{ fontSize: '13px', padding: '8px 14px' }}>✓ Valid Signature</span>}
-                        {verifyState[f.id] === 'invalid' && <span className="badge badge-invalid" style={{ fontSize: '13px', padding: '8px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}><AlertTriangle size={14}/> TAMPERED</span>}
+                        {verifyState[f.id] === 'invalid' && <span className="badge badge-invalid" style={{ fontSize: '13px', padding: '8px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}><AlertTriangle size={14} /> TAMPERED</span>}
                       </td>
-
                       <td style={{ padding: '24px 12px', textAlign: 'right' }}>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                           <button className="btn-secondary" onClick={() => runDetailedTrace(f)} style={{ fontSize: '13px', padding: '8px 14px', backgroundColor: 'var(--bg-dark-green)', color: 'white', border: 'none' }} title="Run Terminal Audit">
-                            <Terminal size={14} style={{display: 'inline', position: 'relative', top: '2px', marginRight: '4px'}}/> Audit
+                            <Terminal size={14} style={{ display: 'inline', position: 'relative', top: '2px', marginRight: '4px' }} /> Audit
                           </button>
-                          
-                          {/* NEW: THE PURGE BUTTON (Only shows if record is Tampered) */}
+
                           {verifyState[f.id] === 'invalid' && (
                             <button onClick={() => handlePurgeRecord(f.id)} className="animate-in" style={{ backgroundColor: 'var(--danger)', color: 'white', border: 'none', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }} title="Purge Compromised Record">
                               <Trash2 size={16} />
@@ -503,8 +543,6 @@ export default function AdminDashboard({ navigate }) {
                 })}
               </tbody>
             </table>
-
-            {/* NEW: Pagination Controls at the bottom of the table */}
             <div style={{ marginTop: 'auto' }}>
               <PaginationControls />
             </div>
@@ -554,7 +592,7 @@ export default function AdminDashboard({ navigate }) {
       {traceModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(5, 13, 33, 0.85)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
           <div className="animate-in" style={{ width: '90%', maxWidth: '700px', backgroundColor: '#0a0a0a', border: '1px solid #333', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.5)', fontFamily: 'monospace' }}>
-            
+
             <div style={{ backgroundColor: '#1a1a1a', padding: '12px 20px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ color: '#888', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Terminal size={16} /> Ed25519 VERIFICATION TRACE // TASK_ID: {traceModal.id}
@@ -563,26 +601,23 @@ export default function AdminDashboard({ navigate }) {
             </div>
 
             <div style={{ padding: '30px', color: '#00ff00', fontSize: '14px', lineHeight: '1.6' }}>
-              
               <div style={{ color: '#aaa', marginBottom: '20px' }}>&gt; Initializing audit protocol...</div>
-
               <div style={{ marginBottom: '15px' }}>
-                <span style={{color: '#fff'}}>[1] Target Payload Extracted:</span><br/>
-                <span style={{color: '#888'}}>&#123; customer_name: "{traceModal.customer_name}", rating: {traceModal.rating}, comment: "{traceModal.comment.substring(0, 30)}..." &#125;</span>
+                <span style={{ color: '#fff' }}>[1] Target Payload Extracted:</span><br />
+                <span style={{ color: '#888' }}>&#123; customer_name: "{traceModal.customer_name}", rating: {traceModal.rating}, comment: "{traceModal.comment.substring(0, 30)}..." &#125;</span>
               </div>
-
               <div style={{ marginBottom: '15px' }}>
-                <span style={{color: '#fff'}}>[2] Retrieving EdDSA Public Key:</span><br/>
-                <span style={{color: '#888'}}>{traceModal.public_key}</span>
+                <span style={{ color: '#fff' }}>[2] Retrieving EdDSA Public Key:</span><br />
+                <span style={{ color: '#888' }}>{traceModal.public_key}</span>
               </div>
-
               <div style={{ marginBottom: '25px' }}>
-                <span style={{color: '#fff'}}>[3] Comparing computed hash against provided signature...</span><br/>
-                <span style={{color: '#888'}}>Expected: {traceModal.signature ? `${traceModal.signature.substring(0, 64)}...` : 'NULL'}</span>
+                <span style={{ color: '#fff' }}>[3] Comparing computed hash against provided signature...</span><br />
+                <span style={{ color: '#888' }}>Expected: {traceModal.signature ? `${traceModal.signature.substring(0, 64)}...` : 'NULL'}</span>
               </div>
 
+              {/* 🟢 I UPDATED THE ANIMATION HERE! It is now 'blink' instead of 'pulse' */}
               {traceStatus === 'loading' && (
-                <div style={{ color: '#00ff00', animation: 'pulse 1s infinite' }}>&gt; Validating elliptic curve constraints...</div>
+                <div style={{ color: '#00ff00', animation: 'blink 1s infinite' }}>&gt; Validating elliptic curve constraints...</div>
               )}
 
               {traceStatus === 'pass' && (
@@ -594,7 +629,7 @@ export default function AdminDashboard({ navigate }) {
 
               {traceStatus === 'fail' && (
                 <div className="animate-in" style={{ backgroundColor: 'rgba(255, 0, 0, 0.1)', borderLeft: '4px solid #ff0000', padding: '15px', marginTop: '20px', color: '#ff0000' }}>
-                  <div style={{ fontWeight: 'bold', fontSize: '18px', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '10px' }}><AlertTriangle size={20}/> [FATAL ERROR] HASH MISMATCH</div>
+                  <div style={{ fontWeight: 'bold', fontSize: '18px', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '10px' }}><AlertTriangle size={20} /> [FATAL ERROR] HASH MISMATCH</div>
                   Computed payload hash does not match the Ed25519 signature. Data has been altered post-submission.
                 </div>
               )}

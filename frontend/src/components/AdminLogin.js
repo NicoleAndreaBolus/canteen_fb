@@ -1,16 +1,20 @@
 import React, { useState } from "react";
 
 export default function AdminLogin({ navigate }) {
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
   const handleLogin = (e) => {
     e.preventDefault();
-    if (password === "admin123") navigate("admin-dashboard");
-    else alert("Invalid credentials. Try 'admin123'");
+    if (username.trim().toLowerCase() === "admin" && password === "admin123") {
+      navigate("admin-dashboard");
+    } else {
+      alert("Invalid credentials. Use username 'admin' and password 'admin123'.");
+    }
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+    <div className="portal-style-bg portal-style-bg-login" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
       <div className="card animate-in" style={{ width: '100%', maxWidth: '400px', textAlign: 'center', padding: '40px 30px' }}>
         
         {/* NEW UA LOGO */}
@@ -33,7 +37,14 @@ export default function AdminLogin({ navigate }) {
 
         <form onSubmit={handleLogin} style={{ textAlign: 'left' }}>
           <label>Username</label>
-          <input type="text" value="admin" disabled style={{ color: '#999', backgroundColor: '#f9f9f9' }} />
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Enter username"
+            autoComplete="username"
+            required
+          />
           
           <label>Password</label>
           <input 
@@ -41,16 +52,21 @@ export default function AdminLogin({ navigate }) {
             value={password} 
             onChange={(e) => setPassword(e.target.value)} 
             placeholder="••••••••" 
+            autoComplete="current-password"
             required 
           />
 
-          <button type="submit" className="btn-primary" style={{ marginTop: '30px', marginBottom: '15px', backgroundColor: 'var(--bg-dark-green)' }}>
-            Login →
+          <p style={{ marginTop: '10px', fontSize: '12px', color: 'var(--text-muted)' }}>
+            Demo credentials: username admin, password admin123
+          </p>
+
+          <button type="submit" className="btn btn-dark" style={{ marginTop: '30px', marginBottom: '15px', width: '100%' }}>
+            Sign In
           </button>
         </form>
 
-        <button className="btn-secondary" onClick={() => navigate('landing')} style={{ border: 'none', background: 'transparent', boxShadow: 'none' }}>
-          ← Back to Home
+        <button type="button" className="btn btn-ghost" onClick={() => navigate('landing')}>
+          Back to Home
         </button>
       </div>
     </div>
